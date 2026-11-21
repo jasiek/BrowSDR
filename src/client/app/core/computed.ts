@@ -3,6 +3,7 @@ import type { BookmarkEntry } from '@/app/workspace/types';
 import type { AppInstance } from '@/app/core/receiver.types';
 import { BOOKMARK_CATEGORIES, DISCORD_INVITE_URL } from './constants';
 import { frequencyView } from '@/display/frequency-view';
+import { normalizeTezukaHost, pageIsSecure, tezukaEndpoints } from '@/devices/tezuka/endpoints';
 
 export const computedProperties = {
 	discordInviteUrl() {
@@ -10,6 +11,15 @@ export const computedProperties = {
 	},
 	isDevelopment() {
 		return import.meta.env.DEV;
+	},
+	/** On https:// pages the Tezuka sockets need its self-signed certificate accepted first. */
+	tezukaCertificateUrl(this: AppInstance) {
+		if (!pageIsSecure()) return '';
+		try {
+			return tezukaEndpoints(normalizeTezukaHost(this.devicePicker.tezukaHost), true).certificate;
+		} catch {
+			return '';
+		}
 	},
 	gainControlGroups(this: AppInstance) {
 		const controls = (this.deviceCapabilities?.gainControls || []).filter(

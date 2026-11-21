@@ -24,3 +24,37 @@
 	font-size: 13px;
 	color: #ddd;
 }
+
+.device-picker-network {
+	cursor: default;
+}
+
+.device-picker-network:hover {
+	background: transparent;
+}
+
+.device-picker-network-row {
+	display: flex;
+	gap: 8px;
+	margin: 6px 0 4px;
+}
+
+.device-picker-network-input {
+	flex: 1;
+	min-width: 0;
+	background: #111;
+	border: 1px solid var(--border);
+	color: var(--text-main);
+	padding: 6px 10px;
+	border-radius: 4px;
+	font-size: 13px;
+	outline: none;
+}
+
+.device-picker-network-input:focus {
+	border-color: var(--accent);
+}
+
+.device-picker-network a {
+	color: var(--accent);
+}

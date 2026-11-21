@@ -116,9 +116,12 @@ export interface ReceiverMethods {
 	_initAudioCtx(): void;
 	_createSilentAudioEl(): HTMLAudioElement;
 	connect(): Promise<void>;
-	pairNewDevice(): Promise<void>;
+	/** Resolves false when no device was chosen. */
+	pairNewDevice(): Promise<boolean | void>;
 	connectToDevice(device: USBDevice): Promise<void>;
 	_connectToDevice(device: USBDevice, deviceIndex?: number): Promise<void>;
+	connectTezuka(host: string): Promise<void>;
+	_connectToTezuka(host: string): Promise<void>;
 	connectMock(): Promise<void>;
 	_connectMock(): Promise<void>;
 	connectIqReplay(recording: IqRecording): Promise<void>;

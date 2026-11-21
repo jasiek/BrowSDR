@@ -1,3 +1,4 @@
+import { DEFAULT_TEZUKA_HOST } from '@/devices/tezuka/endpoints';
 import type { HdStatus } from '@/worker/decoders/hd-radio/types';
 import type { BleDevice, BleStatus } from '@/worker/decoders/ble/types';
 import type { AisStatus, Vessel } from '@/worker/decoders/ais/types';
@@ -113,6 +114,7 @@ export function createAppData() {
 		devicePicker: {
 			show: false,
 			devices: [] as PairedDevices,
+			tezukaHost: DEFAULT_TEZUKA_HOST,
 		},
 		sidebarOpen: false,
 		showAbout: false,

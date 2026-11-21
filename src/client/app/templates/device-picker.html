@@ -10,6 +10,20 @@
 				<div class="device-picker-meta">{{ entry.productName || 'USB ' + entry.device.vendorId.toString(16) + ':' + entry.device.productId.toString(16) }}</div>
 				<div class="device-picker-meta" v-if="entry.device.serialNumber">Serial: {{ entry.device.serialNumber }}</div>
 			</div>
+			<form class="device-picker-item device-picker-network" @submit.prevent="connectTezuka(devicePicker.tezukaHost)">
+				<label>
+					<span class="device-picker-name">Tezuka PlutoSDR on the network</span>
+					<span class="device-picker-network-row">
+						<UiInput v-model.trim="devicePicker.tezukaHost" class="device-picker-network-input" placeholder="pluto.local"
+							autocomplete="off" autocapitalize="off" spellcheck="false" />
+						<UiButton type="submit" :disabled="!devicePicker.tezukaHost">Connect</UiButton>
+					</span>
+				</label>
+				<div class="device-picker-meta">Raw IQ over WebSocket and controls over MQTT, from Tezuka firmware.</div>
+				<div class="device-picker-meta" v-if="tezukaCertificateUrl">
+					First time: open <a :href="tezukaCertificateUrl" target="_blank" rel="noopener">{{ tezukaCertificateUrl }}</a> and accept its certificate.
+				</div>
+			</form>
 			<UiButton v-if="isDevelopment" variant="device" @click="connectMock">
 				<span class="device-picker-name">Mock SDR</span>
 				<span class="device-picker-meta">Simulated receiver for testing</span>

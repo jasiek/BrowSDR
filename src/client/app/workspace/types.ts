@@ -1,3 +1,4 @@
+import type { ReceiverSource } from '@/app/radio/types';
 import type { Vfo } from '@/app/core/types';
 import type { Component, WatchOptions, WatchStopHandle } from 'vue';
 import type { AppInstance } from '@/app/core/receiver.types';
@@ -35,7 +36,7 @@ export interface WorkspaceInstance extends WorkspaceData {
 	selectReceiver(id: string): void;
 	addDevice(): Promise<void>;
 	isDeviceConnected(device: USBDevice): boolean;
-	connectDevice(source: AppInstance, device: USBDevice | 'mock'): Promise<void>;
+	connectDevice(source: AppInstance, device: ReceiverSource): Promise<void>;
 	connectIqReplay(source: AppInstance, recording: IqRecording): Promise<void>;
 	removeReceiver(id: string): Promise<void>;
 	broadcastReceivers(clientId?: string): void;
@@ -129,3 +130,10 @@ export interface Bookmark {
 }
 
 export type BookmarkEntry = { bm: Bookmark; i: number };
+
+/** Workspace state shared by receiver connections. */
+export interface WorkspaceClaims {
+	/** USB devices by object; network receivers by `tezuka:<host>`. */
+	claims: Map<USBDevice | string, string>;
+	legacyMigrationClaimed: boolean;
+}

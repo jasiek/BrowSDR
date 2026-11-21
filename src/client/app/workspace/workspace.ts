@@ -20,13 +20,14 @@ const workspaceTemplate = `
 			</div>`;
 import { isRecord } from '@/platform/data';
 import { errorMessage } from '@/platform/errors';
-import type { WorkspaceInstance, ReceiverEntry, ReceiverComponent, Bookmark } from './types';
+import type { WorkspaceInstance, ReceiverEntry, ReceiverComponent, Bookmark, WorkspaceClaims } from './types';
 import type { AppInstance } from '@/app/core/receiver.types';
 import type { ReceiverCommand, ReceiverInventory } from '@/remote/types';
 import { markRaw } from 'vue';
 import { WebRTCHandler, PEER_ID_PREFIX } from '@/remote/webrtc';
 import { ReceiverTransport, unpackReceiverChunk } from '@/remote/receiver-transport';
-import { usbSettingsKey } from '@/radio/usb-device-selection';
+import type { ReceiverSource } from '@/app/radio/types';
+import { connectDevice } from './connect-device';
 import { bookmarkMethods } from './bookmarks';
 import { WorkspaceMediaSession } from '@/app/audio/media-session';
 import { UiButton, UiNotice } from '@/ui';
@@ -104,7 +105,7 @@ export function createWorkspace(Receiver: ReceiverComponent) {
 			isDeviceConnected(this: WorkspaceInstance, device: USBDevice) {
 				return isDeviceConnected.call(this, runtime, device);
 			},
-			connectDevice(this: WorkspaceInstance, source: AppInstance, device: USBDevice | 'mock') {
+			connectDevice(this: WorkspaceInstance, source: AppInstance, device: ReceiverSource) {
 				return connectDevice.call(this, runtime, source, device);
 			},
 			connectIqReplay(this: WorkspaceInstance, source: AppInstance, recording: IqRecording) {
@@ -141,11 +142,12 @@ export function createWorkspace(Receiver: ReceiverComponent) {
 	};
 }
 
-class WorkspaceRuntime {
+class WorkspaceRuntime implements WorkspaceClaims {
 	nextId = 1;
 	instances = new Map<string, AppInstance>();
 	ready = new Map<string, (app: AppInstance | null) => void>();
-	claims = new Map<USBDevice, string>();
+	/** USB devices by object; network receivers by `tezuka:<host>`. */
+	claims = new Map<USBDevice | string, string>();
 	transport: WebRTCHandler | null = null;
 	manifestQueue = Promise.resolve();
 	legacyMigrationClaimed = false;
@@ -215,77 +217,6 @@ function isDeviceConnected(this: WorkspaceInstance, runtime: WorkspaceRuntime, d
 	// WebUSB reuses each physical device's object within this window.
 	// A serial number alone cannot identify RTL-SDRs with factory serials.
 	return runtime.claims.has(device);
-}
-
-async function connectDevice(this: WorkspaceInstance, runtime: WorkspaceRuntime, source: AppInstance, device: USBDevice | 'mock') {
-	if (this.mode === 'client') return;
-	if ([source._connectingDevice, source._removing].some(Boolean)) return;
-	if (device !== 'mock' && this.isDeviceConnected(device)) {
-		source.showMsg('This SDR is already connected.');
-		return;
-	}
-	source._connectingDevice = true;
-	if (device !== 'mock') runtime.claims.set(device, source.receiverId);
-	const app = source.connected ? await this.newReceiver() : source;
-	if (!app) {
-		if (device !== 'mock') runtime.claims.delete(device);
-		source._connectingDevice = false;
-		return;
-	}
-	app._connectingDevice = true;
-	const entry = this.receivers.find((item: ReceiverEntry) => item.id === app.receiverId);
-	if (!entry) return;
-	if (device !== 'mock') runtime.claims.set(device, app.receiverId); // Reserve before any USB awaits.
-	let useLegacy = false;
-	try {
-		if (device !== 'mock') {
-			let index;
-			({ index, useLegacy } = await prepareUsbSettings.call(this, device, entry, useLegacy, runtime, app));
-			await app._connectToDevice(device, index);
-		} else await app._connectMock();
-		if (!app.connected) {
-			if (useLegacy) runtime.legacyMigrationClaimed = false;
-			if (device !== 'mock') runtime.claims.delete(device);
-			return;
-		}
-		app._initAudioCtx();
-		if (this.mode === 'host') await this.attachHostReceiver(app);
-		await this.$nextTick();
-		this.broadcastReceivers();
-	} catch (error) {
-		if (useLegacy && !app.connected) runtime.legacyMigrationClaimed = false;
-		if (device !== 'mock') runtime.claims.delete(device);
-		this.error = errorMessage(error);
-	} finally {
-		source._connectingDevice = false;
-		app._connectingDevice = false;
-	}
-}
-
-async function prepareUsbSettings(
-	this: WorkspaceInstance,
-	device: USBDevice,
-	entry: ReceiverEntry,
-	useLegacy: boolean,
-	runtime: WorkspaceRuntime,
-	app: AppInstance,
-) {
-	const paired = await navigator.usb.getDevices();
-	const index = paired.indexOf(device);
-	if (index < 0) throw new Error('SDR is no longer connected');
-	const startupSettings = entry.settingsKey === 'SDRSetting';
-	entry.settingsKey = usbSettingsKey(device, paired);
-	entry.deviceLabel = `SDR ${index + 1} · ${device.productName || 'USB SDR'}`;
-	entry.label = entry.deviceLabel;
-	await this.$nextTick();
-	useLegacy = !runtime.legacyMigrationClaimed;
-	runtime.legacyMigrationClaimed = true;
-	// The first local receiver already displays the user's startup configuration.
-	// Transfer that configuration to its device key rather than replacing it with
-	// an older device save. Additional receivers still restore their own settings.
-	if (useLegacy && startupSettings) app.saveSetting();
-	else app.loadSetting(useLegacy);
-	return { index, useLegacy };
 }
 
 async function removeReceiver(this: WorkspaceInstance, runtime: WorkspaceRuntime, id: string) {

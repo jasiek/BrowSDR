@@ -38,10 +38,13 @@ function pagerProxies(app: AppInstance) {
 }
 import { getAllCatalogFilters, lookupDevice } from '@/radio/device-catalog';
 import { localUsbIssue } from '@/platform/browser-capabilities';
+import { normalizeTezukaHost } from '@/devices/tezuka/endpoints';
+import { saveTezukaHost, savedTezukaHost } from './network-hosts';
 
 export const connectionMethods = {
 	async connect(this: AppInstance) {
 		if (this.remoteMode === 'client' || this.workspace?.mode === 'client') return;
+		this.devicePicker.tezukaHost = savedTezukaHost() ?? this.devicePicker.tezukaHost;
 		this.usbCapabilityIssue = localUsbIssue();
 		if (this.usbCapabilityIssue) {
 			this.devicePicker.devices = [];
@@ -73,10 +76,12 @@ export const connectionMethods = {
 		}
 
 		this.devicePicker.devices = sdrDevices;
-		// Keep development receivers reachable without opening a USB prompt first.
+		// Keep development and saved network receivers reachable without opening a USB prompt first.
 		// A slow getDevices() can expire activation; retain the explicit pairing button then.
-		if (!import.meta.env.DEV && !sdrDevices.length && navigator.userActivation?.isActive !== false) {
-			return this.pairNewDevice();
+		if (!import.meta.env.DEV && !sdrDevices.length && !savedTezukaHost() && navigator.userActivation?.isActive !== false) {
+			// Cancelling the USB prompt leads to the picker, which also offers network receivers.
+			if ((await this.pairNewDevice()) === false) this.devicePicker.show = true;
+			return;
 		}
 		this.devicePicker.show = true;
 	},
@@ -97,7 +102,7 @@ export const connectionMethods = {
 				if (errorName(error) !== 'NotFoundError') this.showMsg('USB access failed: ' + errorMessage(error));
 				return null;
 			});
-		if (!device) return;
+		if (!device) return false;
 		await this.connectToDevice(device);
 	},
 
@@ -107,47 +112,35 @@ export const connectionMethods = {
 		return this._connectToDevice(device);
 	},
 	async _connectToDevice(this: AppInstance, device: USBDevice, deviceIndex?: number) {
-		this.deviceInfoCollapsed = true;
-		this.info.device = null;
-		this.devicePicker.show = false;
-		this.showMsg('Connecting...');
-		try {
-			const ok = await this.backend.open({
+		return openReceiver(this, () =>
+			this.backend.open({
 				vendorId: device.vendorId,
 				productId: device.productId,
 				serialNumber: device.serialNumber,
 				deviceIndex,
-			});
-			if (ok) {
-				this.connected = true;
-				const info = await this.backend.info();
-				this.info.boardName = info.name;
-				this.info.device = info;
+			}),
+		);
+	},
 
-				// Populate device capabilities for dynamic UI
-				const caps = await this.backend.getDeviceCapabilities();
-				this.deviceCapabilities = caps;
-				let retuned = '';
-				if (caps) {
-					const saved = !this.gainDeviceType || this.gainDeviceType === caps.deviceType ? this.gains : {};
-					this.gains = restoreDeviceGains(caps, saved);
-					this.gainDeviceType = caps.deviceType;
-
-					// If current sample rate isn't in the device's supported list, pick the closest
-					if (!caps.sampleRates.includes(this.radio.sampleRate)) {
-						this.radio.sampleRate = caps.sampleRates[caps.sampleRates.length - 1];
-					}
-					retuned = fitTuningToDevice(this, caps.frequencyRange);
-				}
-
-				this.showMsg('Connected to ' + this.info.boardName + retuned);
-				await this.startStream();
-			} else {
-				this.showMsg('Failed to open device.');
-			}
-		} catch (e) {
-			this.showMsg('Connect Error: ' + errorMessage(e));
+	/** Connect a Tezuka firmware board on the local network by host name or IP address. */
+	async connectTezuka(this: AppInstance, hostInput: string) {
+		if (this.remoteMode === 'client' || this.workspace?.mode === 'client' || !this.backend) return;
+		let host: string;
+		try {
+			host = normalizeTezukaHost(hostInput);
+		} catch (error) {
+			this.showMsg(errorMessage(error));
+			return;
 		}
+		saveTezukaHost(host);
+		this.devicePicker.tezukaHost = host;
+		this.devicePicker.show = false;
+		this._initAudioCtx(); // create AudioContext within user gesture
+		if (this.workspace) return this.workspace.connectDevice(this, { kind: 'tezuka', host });
+		return this._connectToTezuka(host);
+	},
+	async _connectToTezuka(this: AppInstance, host: string) {
+		return openReceiver(this, () => this.backend.openTezuka(host), host);
 	},
 
 	async connectMock(this: AppInstance) {
@@ -432,6 +425,45 @@ export const connectionMethods = {
 		}
 	},
 };
+
+/** Open a local receiver through `open`, then load its capabilities and start streaming. */
+async function openReceiver(receiver: AppInstance, open: () => Promise<boolean>, networkHost?: string) {
+	receiver.deviceInfoCollapsed = true;
+	receiver.info.device = null;
+	receiver.devicePicker.show = false;
+	receiver.showMsg(networkHost ? `Connecting to ${networkHost}...` : 'Connecting...');
+	try {
+		if (!(await open())) {
+			receiver.showMsg('Failed to open device.');
+			return;
+		}
+		receiver.connected = true;
+		const info = await receiver.backend.info();
+		receiver.info.boardName = info.name;
+		receiver.info.device = info;
+
+		// Populate device capabilities for dynamic UI
+		const caps = await receiver.backend.getDeviceCapabilities();
+		receiver.deviceCapabilities = caps;
+		let retuned = '';
+		if (caps) {
+			const saved = !receiver.gainDeviceType || receiver.gainDeviceType === caps.deviceType ? receiver.gains : {};
+			receiver.gains = restoreDeviceGains(caps, saved);
+			receiver.gainDeviceType = caps.deviceType;
+
+			// If current sample rate isn't in the device's supported list, pick the closest
+			if (!caps.sampleRates.includes(receiver.radio.sampleRate)) {
+				receiver.radio.sampleRate = caps.sampleRates[networkHost ? 0 : caps.sampleRates.length - 1];
+			}
+			retuned = fitTuningToDevice(receiver, caps.frequencyRange);
+		}
+
+		receiver.showMsg('Connected to ' + receiver.info.boardName + retuned);
+		await receiver.startStream();
+	} catch (e) {
+		receiver.showMsg('Connect Error: ' + errorMessage(e));
+	}
+}
 
 function restoreStartupTuning(receiver: AppInstance, requested: { centerFreq: number; frequencyShift: number }, error: unknown) {
 	const previous = receiver._confirmedTuning;

@@ -20,6 +20,7 @@ export class PlutoThroughput {
 		private readonly sampleRate: number,
 		private readonly report: (summary: string, shortfall: boolean) => void,
 		private readonly windowMs = 10000,
+		private readonly labels = { source: 'PlutoSDR', link: 'USB' },
 	) {}
 
 	/** Record one delivered block: time spent waiting for its reply, then processing it. */
@@ -37,8 +38,8 @@ export class PlutoThroughput {
 		const rate = (this.samples * 1000) / elapsed;
 		const percent = ((100 * rate) / this.sampleRate).toFixed(1);
 		this.report(
-			`PlutoSDR: received ${msps(rate)} of ${msps(this.sampleRate)} MSPS (${percent}%); ` +
-				`longest wait for USB ${this.longestWait.toFixed(1)} ms, longest processing ${this.longestProcessing.toFixed(1)} ms`,
+			`${this.labels.source}: received ${msps(rate)} of ${msps(this.sampleRate)} MSPS (${percent}%); ` +
+				`longest wait for ${this.labels.link} ${this.longestWait.toFixed(1)} ms, longest processing ${this.longestProcessing.toFixed(1)} ms`,
 			rate < this.sampleRate * SHORTFALL_RATIO,
 		);
 		this.windowStart = now;

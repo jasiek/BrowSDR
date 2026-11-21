@@ -60,6 +60,8 @@ import '@/devices/airspy';
 import '@/devices/airspyhf';
 import '@/devices/limesdr/device';
 import '@/devices/plutosdr/device';
+import { TezukaDevice } from '@/devices/tezuka/device';
+import { normalizeTezukaHost } from '@/devices/tezuka/endpoints';
 import {
 	setRemoteHostCallback,
 	setRemoteHostFftCallback,
@@ -261,6 +263,20 @@ export class Backend {
 			} catch {
 				/* Best-effort cleanup or optional capability; retain the current state if unavailable. */
 			}
+			throw error;
+		}
+		this.device = device;
+		return true;
+	}
+
+	/** Connect to a Tezuka firmware board over the local network. */
+	async openTezuka(host: string): Promise<boolean> {
+		if (this.device) throw new Error('A device is already connected to this receiver');
+		const device = new TezukaDevice(normalizeTezukaHost(host));
+		try {
+			await device.open();
+		} catch (error) {
+			await device.close().catch(() => {});
 			throw error;
 		}
 		this.device = device;
